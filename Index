@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Sucursales</title>
+  <style>
+    :root {
+      --verde-neufeld: #5C9232;
+      --verde-neufeld-hover: #4a7728;
+      --bg-color: #f4f6f8;
+      --card-bg: #ffffff;
+      --text-color: #333333;
+      --border-color: #e0e0e0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      max-width: 900px;
+      width: 100%;
+      background-color: var(--card-bg);
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Título Editable */
+    .title-container {
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .editable-title {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #2c3e50;
+      padding: 0.5rem;
+      border: 2px dashed transparent;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .editable-title:hover, .editable-title:focus {
+      border-color: var(--verde-neufeld);
+      background-color: #f9fbf8;
+    }
+
+    /* Acciones */
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 2rem;
+    }
+
+    .btn-reset {
+      background-color: #e74c3c;
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+    }
+
+    .btn-reset:hover {
+      background-color: #c0392b;
+    }
+
+    .btn-reset:active {
+      transform: scale(0.98);
+    }
+
+    /* Grid de Sucursales */
+    .grid-sucursales {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 10px;
+    }
+
+    .btn-sucursal {
+      background-color: #f8f9fa;
+      border: 2px solid var(--border-color);
+      color: var(--text-color);
+      padding: 0.8rem 0.5rem;
+      font-size: 1rem;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+
+    .btn-sucursal:hover {
+      border-color: var(--verde-neufeld);
+    }
+
+    /* Estado Marcado - Verde Neufeld */
+    .btn-sucursal.activo {
+      background-color: var(--verde-neufeld);
+      border-color: var(--verde-neufeld);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(92, 146, 50, 0.3);
+    }
+
+    .btn-sucursal.activo:hover {
+      background-color: var(--verde-neufeld-hover);
+      border-color: var(--verde-neufeld-hover);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Título Editable -->
+    <div class="title-container">
+      <h1 class="editable-title" id="pageTitle" contenteditable="true" spellcheck="false">
+        Control de Sucursales
+      </h1>
+    </div>
+
+    <!-- Botón Reiniciar -->
+    <div class="actions">
+      <button class="btn-reset" id="btnReset">Reiniciar Selección</button>
+    </div>
+
+    <!-- Grid con Sucursales (Ordenadas Alfabéticamente) -->
+    <div class="grid-sucursales" id="gridSucursales">
+      <!-- Generado dinámicamente -->
+    </div>
+  </div>
+
+  <script>
+    // Lista de sucursales dada, ordenada alfabéticamente
+    const sucursales = [
+      "ACA", "AER", "ALC", "ALT", "AME", "ASL", "ATE", "ATO", 
+      "BUG", "CGR", "CHA", "COC", "COL", "CPI", "CRE", "EIG", 
+      "ETE", "FED", "GAL", "GCO", "GUA", "HIS", "IND", "ING", 
+      "JUA", "LCA", "LPA", "LPL", "MOT", "NOB", "OBL", "POR", 
+      "PSO", "RCE", "REV", "RMI", "RPL", "SFE", "SIS", "SLU", 
+      "TEC", "TES", "TET", "TLA", "TON", "TRA"
+    ];
+
+    const gridContainer = document.getElementById('gridSucursales');
+    const btnReset = document.getElementById('btnReset');
+    const pageTitle = document.getElementById('pageTitle');
+
+    // Claves para el localStorage
+    const STORAGE_TITLE_KEY = 'sucursales_titulo';
+    const STORAGE_STATE_KEY = 'sucursales_marcadas';
+
+    // Cargar título guardado
+    const savedTitle = localStorage.getItem(STORAGE_TITLE_KEY);
+    if (savedTitle) {
+      pageTitle.innerText = savedTitle;
+    }
+
+    // Guardar título al modificar
+    pageTitle.addEventListener('input', () => {
+      localStorage.setItem(STORAGE_TITLE_KEY, pageTitle.innerText);
+    });
+
+    // Cargar estado de sucursales guardadas (Set para rápida consulta)
+    const activeSucursales = new Set(JSON.parse(localStorage.getItem(STORAGE_STATE_KEY)) || []);
+
+    // Renderizar botones
+    sucursales.forEach(codigo => {
+      const btn = document.createElement('button');
+      btn.classList.add('btn-sucursal');
+      btn.innerText = codigo;
+
+      if (activeSucursales.has(codigo)) {
+        btn.classList.add('activo');
+      }
+
+      // Toggle al hacer click
+      btn.addEventListener('click', () => {
+        btn.classList.toggle('activo');
+        
+        if (btn.classList.contains('activo')) {
+          activeSucursales.add(codigo);
+        } else {
+          activeSucursales.delete(codigo);
+        }
+
+        // Guardar estado
+        localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(Array.from(activeSucursales)));
+      });
+
+      gridContainer.appendChild(btn);
+    });
+
+    // Función de Reiniciar
+    btnReset.addEventListener('click', () => {
+      activeSucursales.clear();
+      localStorage.removeItem(STORAGE_STATE_KEY);
+
+      const buttons = gridContainer.querySelectorAll('.btn-sucursal');
+      buttons.forEach(btn => btn.classList.remove('activo'));
+    });
+  </script>
+
+</body>
+</html>
