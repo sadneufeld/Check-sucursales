@@ -149,7 +149,8 @@
   </div>
 
   <script>
-    // Lista de sucursales dada, ordenada alfabéticamente
+    const API_URL = 'https://script.google.com/macros/s/AKfycbzvaIXHprwhmPqma7MPM_L3cjtfUPMFeaw0rpvw3xa0pzh_elsR36TNq54fx95nOc5k/exec';
+
     const sucursales = [
       "ACA", "AER", "ALC", "ALT", "AME", "ASL", "ATE", "ATO", 
       "BUG", "CGR", "CHA", "COC", "COL", "CPI", "CRE", "EIG", 
@@ -163,59 +164,87 @@
     const btnReset = document.getElementById('btnReset');
     const pageTitle = document.getElementById('pageTitle');
 
-    // Claves para el localStorage
-    const STORAGE_TITLE_KEY = 'sucursales_titulo';
-    const STORAGE_STATE_KEY = 'sucursales_marcadas';
+    let activeSucursales = new Set();
+    const htmlButtons = {};
 
-    // Cargar título guardado
-    const savedTitle = localStorage.getItem(STORAGE_TITLE_KEY);
-    if (savedTitle) {
-      pageTitle.innerText = savedTitle;
-    }
-
-    // Guardar título al modificar
-    pageTitle.addEventListener('input', () => {
-      localStorage.setItem(STORAGE_TITLE_KEY, pageTitle.innerText);
-    });
-
-    // Cargar estado de sucursales guardadas (Set para rápida consulta)
-    const activeSucursales = new Set(JSON.parse(localStorage.getItem(STORAGE_STATE_KEY)) || []);
-
-    // Renderizar botones
+    // 1. CREAR LOS BOTONES INICIALES
     sucursales.forEach(codigo => {
       const btn = document.createElement('button');
       btn.classList.add('btn-sucursal');
       btn.innerText = codigo;
-
-      if (activeSucursales.has(codigo)) {
-        btn.classList.add('activo');
-      }
-
-      // Toggle al hacer click
+      
       btn.addEventListener('click', () => {
+        // Cambiar visualmente al instante
         btn.classList.toggle('activo');
-        
         if (btn.classList.contains('activo')) {
           activeSucursales.add(codigo);
         } else {
           activeSucursales.delete(codigo);
         }
-
-        // Guardar estado
-        localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(Array.from(activeSucursales)));
+        // Guardar en la base de datos (Google Sheets)
+        saveSucursales();
       });
 
+      htmlButtons[codigo] = btn;
       gridContainer.appendChild(btn);
     });
 
-    // Función de Reiniciar
+    // 2. FUNCIÓN PARA LEER DESDE GOOGLE SHEETS
+    async function loadData() {
+      try {
+        // El "?t=" evita que el navegador guarde la respuesta en caché
+        const response = await fetch(`${API_URL}?action=get&t=${Date.now()}`);
+        const data = await response.json();
+
+        // Actualizar título solo si el usuario no lo está editando en este momento
+        if (document.activeElement !== pageTitle) {
+          pageTitle.innerText = data.title;
+        }
+
+        // Sincronizar sucursales
+        activeSucursales = new Set(data.sucursales);
+        
+        // Colorear los botones correctos
+        sucursales.forEach(codigo => {
+          if (activeSucursales.has(codigo)) {
+            htmlButtons[codigo].classList.add('activo');
+          } else {
+            htmlButtons[codigo].classList.remove('activo');
+          }
+        });
+      } catch (error) {
+        console.error("Error al conectar con la base de datos", error);
+      }
+    }
+
+    // 3. FUNCIONES PARA GUARDAR EN GOOGLE SHEETS
+    function saveSucursales() {
+      const arr = Array.from(activeSucursales);
+      const jsonStr = encodeURIComponent(JSON.stringify(arr));
+      fetch(`${API_URL}?action=updateSucursales&sucursales=${jsonStr}`);
+    }
+
+    let timeoutId;
+    pageTitle.addEventListener('input', () => {
+      // Esperamos 1 segundo después de que dejen de escribir para no saturar el servidor
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        const newTitle = encodeURIComponent(pageTitle.innerText);
+        fetch(`${API_URL}?action=updateTitle&title=${newTitle}`);
+      }, 1000);
+    });
+
     btnReset.addEventListener('click', () => {
       activeSucursales.clear();
-      localStorage.removeItem(STORAGE_STATE_KEY);
-
-      const buttons = gridContainer.querySelectorAll('.btn-sucursal');
-      buttons.forEach(btn => btn.classList.remove('activo'));
+      // Limpiar botones visualmente
+      sucursales.forEach(codigo => htmlButtons[codigo].classList.remove('activo'));
+      // Limpiar en Google Sheets
+      fetch(`${API_URL}?action=updateSucursales&sucursales=[]`);
     });
+
+    // 4. INICIAR Y MANTENER ACTUALIZADO
+    loadData(); // Cargar al abrir la página
+    setInterval(loadData, 5000); // Preguntar a Google Sheets cada 5 segundos si hay cambios
   </script>
 
 </body>
