@@ -66,27 +66,50 @@
     .actions {
       display: flex;
       justify-content: flex-end;
+      gap: 10px;
       margin-bottom: 2rem;
     }
 
-    .btn-reset {
-      background-color: #e74c3c;
-      color: white;
+    /* Botones de acción */
+    button {
       border: none;
       padding: 0.6rem 1.2rem;
       font-size: 0.95rem;
       font-weight: 600;
       border-radius: 6px;
       cursor: pointer;
-      transition: background-color 0.2s ease, transform 0.1s ease;
+      transition: all 0.2s ease;
     }
 
-    .btn-reset:hover {
-      background-color: #c0392b;
-    }
-
-    .btn-reset:active {
+    button:active {
       transform: scale(0.98);
+    }
+
+    .btn-reset {
+      background-color: #e74c3c;
+      color: white;
+    }
+
+    .btn-reset:hover { background-color: #c0392b; }
+
+    .btn-mode {
+      background-color: #7f8c8d;
+      color: white;
+    }
+
+    /* Estilo cuando está en modo nube */
+    .btn-mode.compartido {
+      background-color: #2980b9;
+      box-shadow: 0 0 8px rgba(41, 128, 185, 0.5);
+    }
+
+    /* Indicador de estado */
+    #statusIndicator {
+      font-size: 0.8rem;
+      margin-top: 5px;
+      color: #7f8c8d;
+      text-align: center;
+      height: 15px;
     }
 
     /* Grid de Sucursales */
@@ -106,14 +129,12 @@
       border-radius: 8px;
       cursor: pointer;
       user-select: none;
-      transition: all 0.2s ease;
     }
 
     .btn-sucursal:hover {
       border-color: var(--verde-neufeld);
     }
 
-    /* Estado Marcado - Verde Neufeld */
     .btn-sucursal.activo {
       background-color: var(--verde-neufeld);
       border-color: var(--verde-neufeld);
@@ -130,19 +151,18 @@
 <body>
 
   <div class="container">
-    <!-- Título Editable -->
     <div class="title-container">
       <h1 class="editable-title" id="pageTitle" contenteditable="true" spellcheck="false">
         Control de Sucursales
       </h1>
+      <div id="statusIndicator">Modo Local activo</div>
     </div>
 
-    <!-- Botón Reiniciar -->
     <div class="actions">
-      <button class="btn-reset" id="btnReset">Reiniciar Selección</button>
+      <button class="btn-mode" id="btnMode">Modo: Local</button>
+      <button class="btn-reset" id="btnReset">Reiniciar</button>
     </div>
 
-    <!-- Grid con Sucursales (Ordenadas Alfabéticamente) -->
     <div class="grid-sucursales" id="gridSucursales">
       <!-- Generado dinámicamente -->
     </div>
@@ -150,6 +170,10 @@
 
   <script>
     const API_URL = 'https://script.google.com/macros/s/AKfycbzvaIXHprwhmPqma7MPM_L3cjtfUPMFeaw0rpvw3xa0pzh_elsR36TNq54fx95nOc5k/exec';
+    
+    // Claves Locales
+    const STORAGE_TITLE_KEY = 'sucursales_titulo';
+    const STORAGE_STATE_KEY = 'sucursales_marcadas';
 
     const sucursales = [
       "ACA", "AER", "ALC", "ALT", "AME", "ASL", "ATE", "ATO", 
@@ -162,90 +186,129 @@
 
     const gridContainer = document.getElementById('gridSucursales');
     const btnReset = document.getElementById('btnReset');
+    const btnMode = document.getElementById('btnMode');
     const pageTitle = document.getElementById('pageTitle');
+    const statusIndicator = document.getElementById('statusIndicator');
 
     let activeSucursales = new Set();
     const htmlButtons = {};
+    let isSharedMode = false; // Empezamos en modo local por defecto
+    let syncInterval;
 
-    // 1. CREAR LOS BOTONES INICIALES
+    // 1. INICIALIZAR INTERFAZ
     sucursales.forEach(codigo => {
       const btn = document.createElement('button');
       btn.classList.add('btn-sucursal');
       btn.innerText = codigo;
       
       btn.addEventListener('click', () => {
-        // Cambiar visualmente al instante
         btn.classList.toggle('activo');
         if (btn.classList.contains('activo')) {
           activeSucursales.add(codigo);
         } else {
           activeSucursales.delete(codigo);
         }
-        // Guardar en la base de datos (Google Sheets)
-        saveSucursales();
+        guardarDatos();
       });
 
       htmlButtons[codigo] = btn;
       gridContainer.appendChild(btn);
     });
 
-    // 2. FUNCIÓN PARA LEER DESDE GOOGLE SHEETS
-    async function loadData() {
-      try {
-        // El "?t=" evita que el navegador guarde la respuesta en caché
-        const response = await fetch(`${API_URL}?action=get&t=${Date.now()}`);
-        const data = await response.json();
-
-        // Actualizar título solo si el usuario no lo está editando en este momento
-        if (document.activeElement !== pageTitle) {
-          pageTitle.innerText = data.title;
-        }
-
-        // Sincronizar sucursales
-        activeSucursales = new Set(data.sucursales);
-        
-        // Colorear los botones correctos
-        sucursales.forEach(codigo => {
-          if (activeSucursales.has(codigo)) {
-            htmlButtons[codigo].classList.add('activo');
-          } else {
-            htmlButtons[codigo].classList.remove('activo');
-          }
-        });
-      } catch (error) {
-        console.error("Error al conectar con la base de datos", error);
+    // 2. LÓGICA DE GUARDADO (Depende del Modo)
+    function guardarDatos() {
+      if (isSharedMode) {
+        statusIndicator.innerText = "Guardando en la nube...";
+        const arr = Array.from(activeSucursales);
+        const jsonStr = encodeURIComponent(JSON.stringify(arr));
+        fetch(`${API_URL}?action=updateSucursales&sucursales=${jsonStr}`, { redirect: 'follow' })
+          .then(() => statusIndicator.innerText = "Sincronizado con la nube")
+          .catch(() => statusIndicator.innerText = "Error al guardar en la nube");
+      } else {
+        localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(Array.from(activeSucursales)));
+        statusIndicator.innerText = "Guardado localmente";
       }
     }
 
-    // 3. FUNCIONES PARA GUARDAR EN GOOGLE SHEETS
-    function saveSucursales() {
-      const arr = Array.from(activeSucursales);
-      const jsonStr = encodeURIComponent(JSON.stringify(arr));
-      fetch(`${API_URL}?action=updateSucursales&sucursales=${jsonStr}`);
+    // 3. LÓGICA DE CARGA (Depende del Modo)
+    async function cargarDatos() {
+      if (isSharedMode) {
+        try {
+          statusIndicator.innerText = "Actualizando desde la nube...";
+          const response = await fetch(`${API_URL}?action=get&t=${Date.now()}`, { redirect: 'follow' });
+          const data = await response.json();
+          
+          if (document.activeElement !== pageTitle) pageTitle.innerText = data.title;
+          activeSucursales = new Set(data.sucursales);
+          statusIndicator.innerText = "Sincronizado con la nube";
+        } catch (error) {
+          statusIndicator.innerText = "Error de conexión. Revisa el link de Google.";
+          console.error(error);
+        }
+      } else {
+        // Carga Local
+        const savedTitle = localStorage.getItem(STORAGE_TITLE_KEY);
+        if (savedTitle && document.activeElement !== pageTitle) pageTitle.innerText = savedTitle;
+        activeSucursales = new Set(JSON.parse(localStorage.getItem(STORAGE_STATE_KEY)) || []);
+        statusIndicator.innerText = "Modo Local activo";
+      }
+
+      // Actualizar botones visualmente
+      sucursales.forEach(codigo => {
+        if (activeSucursales.has(codigo)) {
+          htmlButtons[codigo].classList.add('activo');
+        } else {
+          htmlButtons[codigo].classList.remove('activo');
+        }
+      });
     }
 
+    // 4. CAMBIAR DE MODO
+    btnMode.addEventListener('click', () => {
+      isSharedMode = !isSharedMode;
+      
+      if (isSharedMode) {
+        btnMode.innerText = "Modo: Compartido";
+        btnMode.classList.add('compartido');
+        cargarDatos(); // Carga lo de la nube
+        syncInterval = setInterval(cargarDatos, 5000); // Sincroniza cada 5s
+      } else {
+        btnMode.innerText = "Modo: Local";
+        btnMode.classList.remove('compartido');
+        clearInterval(syncInterval); // Detiene la sincronización
+        cargarDatos(); // Carga lo local
+      }
+    });
+
+    // 5. EDICIÓN DEL TÍTULO
     let timeoutId;
     pageTitle.addEventListener('input', () => {
-      // Esperamos 1 segundo después de que dejen de escribir para no saturar el servidor
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
-        const newTitle = encodeURIComponent(pageTitle.innerText);
-        fetch(`${API_URL}?action=updateTitle&title=${newTitle}`);
+        if (isSharedMode) {
+          const newTitle = encodeURIComponent(pageTitle.innerText);
+          fetch(`${API_URL}?action=updateTitle&title=${newTitle}`, { redirect: 'follow' });
+        } else {
+          localStorage.setItem(STORAGE_TITLE_KEY, pageTitle.innerText);
+        }
       }, 1000);
     });
 
+    // 6. REINICIAR
     btnReset.addEventListener('click', () => {
       activeSucursales.clear();
-      // Limpiar botones visualmente
       sucursales.forEach(codigo => htmlButtons[codigo].classList.remove('activo'));
-      // Limpiar en Google Sheets
-      fetch(`${API_URL}?action=updateSucursales&sucursales=[]`);
+      
+      if (isSharedMode) {
+        fetch(`${API_URL}?action=updateSucursales&sucursales=[]`, { redirect: 'follow' });
+      } else {
+        localStorage.removeItem(STORAGE_STATE_KEY);
+      }
     });
 
-    // 4. INICIAR Y MANTENER ACTUALIZADO
-    loadData(); // Cargar al abrir la página
-    setInterval(loadData, 5000); // Preguntar a Google Sheets cada 5 segundos si hay cambios
-  </script>
+    // Iniciar cargando la versión local por defecto
+    cargarDatos();
 
+  </script>
 </body>
 </html>
